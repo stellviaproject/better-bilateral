@@ -99,20 +99,23 @@ func Mutation(chromosome Chromosome, mutationRate float64, minColorSpace int, ma
 	return chromosome
 }
 
-func GeneticAlgorithm(inputImage image.Image, outputImage image.Image, populationSize int, generations int, mutationRate float64, minColorSpace int, maxColorSpace int, minSigmaSpace int, maxSigmaSpace int, minDiameter int, maxDiameter int) Chromosome {
+func GeneticAlgorithm(inputImage image.Image, outputImage image.Image, parallel int, populationSize int, generations int, mutationRate float64, minColorSpace int, maxColorSpace int, minSigmaSpace int, maxSigmaSpace int, minDiameter int, maxDiameter int) Chromosome {
 	// Generar una población inicial de cromosomas
+	log.Println("generate population")
 	population := GeneratePopulation(populationSize, minColorSpace, maxColorSpace, minSigmaSpace, maxSigmaSpace, minDiameter, maxDiameter)
 	// Evaluar la aptitud de cada cromosoma en la población
 	bestFitness := 0.0
 	var bestChromosome Chromosome
 	for i := 0; i < generations; i++ {
+		log.Println("evaluate population")
 		wg := sync.WaitGroup{}
-		thr := make(chan int, 10)
+		thr := make(chan int, parallel)
 		mtx := sync.Mutex{}
+		prg := 0
 		for j := 0; j < len(population); j++ {
-			thr <- 0
 			wg.Add(1)
 			go func(j int) {
+				thr <- 0
 				defer wg.Done()
 				fitness := EvaluateFitness(population[j], inputImage, outputImage)
 				mtx.Lock()
@@ -120,14 +123,18 @@ func GeneticAlgorithm(inputImage image.Image, outputImage image.Image, populatio
 					bestFitness = fitness
 					bestChromosome = population[j]
 				}
+				prg++
+				log.Println("evaluation progress: ", prg, "/", len(population))
 				mtx.Unlock()
 				<-thr
 			}(j)
 		}
 		wg.Wait()
+		log.Println("selection")
 		// Seleccionar los cromosomas más aptos para la reproducción
 		selected := Selection(population, inputImage, outputImage)
 		// Realizar la reproducción y mutación para generar una nueva población
+		log.Println("crossover")
 		var newPopulation []Chromosome
 		for j := 0; j < len(selected)-1; j += 2 {
 			child1 := Crossover(selected[j], selected[j+1])
@@ -137,6 +144,7 @@ func GeneticAlgorithm(inputImage image.Image, outputImage image.Image, populatio
 			newPopulation = append(newPopulation, child1, child2)
 		}
 		// Reemplazar la población anterior con la nueva población
+		log.Println("replace")
 		population = newPopulation
 		log.Println("generatio: ", i, "/", generations, " population: ", len(population), " best: ", bestChromosome)
 	}
